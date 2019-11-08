@@ -45,14 +45,6 @@
 #include <fstream>
 #include <string>
 #include <stdlib.h>
-#include <map>
-#include <algorithm>
-
-#include <pcl/features/normal_3d.h>
-#include <pcl/impl/point_types.hpp>
-#include <pcl/features/boundary.h>
-
-
 typedef pcl::PointXYZ PointT;
 
 const int ULTRASOUND_NUM = 120;
@@ -73,8 +65,6 @@ ros::Publisher scan_pub;
 ros::Publisher ground_pub;
 ros::Publisher centroid_pub;
 ros::Publisher path_pub;
-ros::Publisher region_pub;
-ros::Publisher boundary_pub;
 
 std::ofstream outfile;
 double ray[ULTRASOUND_NUM+1];
@@ -94,7 +84,6 @@ void CB_publishCycle(const ros::TimerEvent& e);
 void ground_extract(const sensor_msgs::PointCloud2ConstPtr& input);
 void centroid_get(const sensor_msgs::PointCloud2ConstPtr& input);
 void path_extract(const sensor_msgs::PointCloud2ConstPtr& input);
-void get_region(const sensor_msgs::PointCloud2ConstPtr& input);
 
 int max_it = 200;
 int main (int argc, char** argv)
@@ -137,8 +126,6 @@ int main (int argc, char** argv)
   ground_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_ground", 10);//ground
   centroid_pub = nh.advertise<sensor_msgs::PointCloud2>("/centroid_point", 10);//centroid
   path_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_path", 10);//path
-  region_pub = nh.advertise<sensor_msgs::PointCloud2>("/region", 10);//region
-  boundary_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_boundary", 10);//boundary
   std::cout << "topics advertise done.." << std::endl;
 
   // Create a ROS subscriber for the input point cloud
@@ -148,43 +135,15 @@ int main (int argc, char** argv)
   ros::Subscriber planeSub = nh.subscribe("/cloud_for_plane",1, ground_extract);
   ros::Subscriber centroidSub = nh.subscribe("/pointcloud_ground", 1, centroid_get);
   ros::Subscriber pathSub = nh.subscribe("/pointcloud_ground", 1, path_extract);
-  ros::Subscriber regionSub = nh.subscribe("/pointcloud_ground", 1, get_region);
   std::cout << "topics subscribe done.." << std::endl;
 
   ros::spin();
 }
 
-void get_region(const sensor_msgs::PointCloud2ConstPtr& input)
-{
-  //std::cout << "---start get_region------------" << std::endl;
-  pcl::PointCloud<PointT> cloudGround;
-  pcl::fromROSMsg (*input, cloudGround);
-  //get_region
-  std::map<int, float> outline;
-  int theta = -22;
-  for(theta;theta<23;theta++){ 
-    float max = 0;
-    for (int i = 0; i < cloudGround.size(); i++)
-    {
-      double k = cloudGround[i].z/cloudGround[i].x;//slop of point
-      double theta_point = atan(k) * 180.0 / M_PI;
-      //std::cout << "theta: " << theta <<"   k: " << k << "  theta_point:" << theta_point << std::endl;
-      //std::cout << "x:" << cloudGround[i].x << " y:" << cloudGround[i].y << " z:" << cloudGround[i].z << std::endl;
-      if( abs(theta-theta_point) < 0.5 ){//x:right y:down z:forward
-        //std::cout << "on line" << std::endl; 
-        if (cloudGround[i].z>max){max = cloudGround[i].z;}
-      }
-    }
-    //std::cout << "max: " << max << std::endl;
-    outline.insert(std::map<int, float>::value_type (theta, max));
-  }
-
-  //std::cout << "---end get_region------------" << std::endl;
-}
 
 void path_extract(const sensor_msgs::PointCloud2ConstPtr& input)
 {
-  //std::cout << "---start path_extract------------" << std::endl;
+  std::cout << "---start path_extract------------" << std::endl;
   pcl::PointCloud<PointT> cloudGround;
   pcl::fromROSMsg (*input, cloudGround);
   pcl::PointCloud<pcl::PointXYZRGB> cloudGroundRGB;
@@ -234,7 +193,10 @@ void path_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   {//pass path
     // pcl::PointXYZRGB p = cloudGroundRGB[i];
     pcl::PointXYZRGB p = cloud_Ptr->points[i];
+    
 
+
+    
     float xOnLine = p.z/k; //get point in line
     // std::cout << "xOnLine: " << xOnLine << std::endl;
     if (xOnLine-0.37>p.x || p.x>xOnLine+0.31 || p.z > centroid[2])
@@ -260,14 +222,14 @@ void path_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   sensor_msgs::PointCloud2 cloud2ROS;
   pcl::toROSMsg(*cloud_Ptr, cloud2ROS);
   path_pub.publish(cloud2ROS);
-  //std::cout << "---end path extract------------" << std::endl;
+  std::cout << "---end path extract------------" << std::endl;
 
 }
 
 
 void centroid_get(const sensor_msgs::PointCloud2ConstPtr& input)
 {
-  //std::cout << "---start centroid------------" << std::endl;
+  std::cout << "---start centroid------------" << std::endl;
   pcl::PointCloud<PointT> cloudGround;
   pcl::PointCloud<pcl::PointXYZRGB> cloudGroundRGB;
   pcl::fromROSMsg (*input, cloudGround);
@@ -305,73 +267,12 @@ void centroid_get(const sensor_msgs::PointCloud2ConstPtr& input)
   sensor_msgs::PointCloud2 cloud2ROS;
   pcl::toROSMsg(cloudGroundRGB , cloud2ROS);
   centroid_pub.publish(cloud2ROS);
-  //std::cout << "---end centroid------------" << std::endl;  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-  
-
-
-  //get outline of ground
-  std::cout << "---start outline extract------------" << std::endl;
-  pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
-  cloud = cloudGround.makeShared();
-  pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
-  pcl::PointCloud<pcl::Boundary> boundaries;
-  pcl::BoundaryEstimation<pcl::PointXYZ,pcl::Normal,pcl::Boundary> est;
-  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
-
-  pcl::NormalEstimation<pcl::PointXYZ,pcl::Normal> normEst;//其中pcl::PointXYZ表示输入类型数据，pcl::Normal表示输出类型,且pcl::Normal前三项是法向，最后一项是曲率
-  normEst.setInputCloud(cloud);
-  normEst.setSearchMethod(tree);
-  // normEst.setRadiusSearch(2);  //法向估计的半径
-  normEst.setKSearch(9);  //法向估计的点数
-  normEst.compute(*normals);
-  cout<<"normal size is "<< normals->size()<<endl;
-  
-  //normal_est.setViewPoint(0,0,0); //这个应该会使法向一致
-  est.setInputCloud(cloud);
-  est.setInputNormals(normals);
-  //  est.setAngleThreshold(90);
-  //   est.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
-  est.setSearchMethod (tree);
-  est.setKSearch(20);  //一般这里的数值越高，最终边界识别的精度越好
-  //  est.setRadiusSearch(everagedistance);  //搜索半径
-  est.compute (boundaries);
-
-  //  pcl::PointCloud<pcl::PointXYZ> boundPoints;
-  pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints (new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::PointCloud<pcl::PointXYZ> noBoundPoints;
-  int countBoundaries = 0;
-  for (int i=0; i<cloud->size(); i++){
-    uint8_t x = (boundaries.points[i].boundary_point);
-    int a = static_cast<int>(x); //该函数的功能是强制类型转换
-    if ( a == 1)
-    {
-      if (cloud->points[i]>)
-      {
-        (*boundPoints).push_back(cloud->points[i]);
-        countBoundaries++;
-      }
-      // std::cout<< "boundPoints: " << boundPoints->points[i].x << " " 
-      //                             << boundPoints->points[i].y << " "
-      //                             << boundPoints->points[i].z << std::endl;
-    }
-    else
-      noBoundPoints.push_back(cloud->points[i]);
-  }
-  std::cout<<"boudary size is：" << countBoundaries <<std::endl;
-  pcl::io::savePCDFileASCII("/home/ssssubt/code/boudary.pcd", *boundPoints);
-  //pcl::io::savePCDFileASCII("/home/ssssubt/code/NoBoundpoints.pcd",noBoundPoints);
-  sensor_msgs::PointCloud2 cloud2ROS_boundary;
-  pcl::toROSMsg(*boundPoints, cloud2ROS_boundary);
-  ground_pub.publish(cloud2ROS_boundary);
-  //pcl::PointCloud<PointT> checkCloud;
-  //pcl::fromROSMsg (cloud2ROS_boundary, checkCloud);
-  //std::cout << "check points: " << checkCloud.size() << std::endl;
-  std::cout << "---end outline extract------------" << std::endl;
+  std::cout << "---end centroid------------" << std::endl;
 }
 
 void ground_extract(const sensor_msgs::PointCloud2ConstPtr& input)
 {
-  //std::cout << "---start ground extract------------" << std::endl;
+  std::cout << "---start ground extract------------" << std::endl;
   pcl::PointCloud<PointT> cloudForPlaneSeg;
   pcl::fromROSMsg (*input, cloudForPlaneSeg);
   std::cout << "input points: " << cloudForPlaneSeg.size() << std::endl;
@@ -382,7 +283,7 @@ void ground_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   pcl::PassThrough<PointT> pass;
   pass.setInputCloud (cloudForPlaneSeg.makeShared());
   pass.setFilterFieldName ("y");//x:right y:down z:forward   coordinate hight is 0.5~0.6
-  pass.setFilterLimits (0.29, 0.35);//cruzr is 0.55-0.6; turtlebot is 0.25-0.35
+  pass.setFilterLimits (0.55, 0.6);
   pass.filter (*indicesPT);
   extract.setInputCloud (cloudForPlaneSeg.makeShared ());
   extract.setIndices (indicesPT);
@@ -392,9 +293,7 @@ void ground_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   sensor_msgs::PointCloud2 cloud2ROS;
   pcl::toROSMsg(cloudGround , cloud2ROS);
   ground_pub.publish(cloud2ROS);
-  //std::cout << "---end ground extract------------" << std::endl;
-
-
+  std::cout << "---end ground extract------------" << std::endl;
 }
 
 bool isInfValue(double value)
@@ -591,7 +490,7 @@ void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoeffic
   scan_msg.header.stamp = ros::Time::now();
   for(int i=0;i<=ULTRASOUND_NUM;i++)
   {
-    double data = ray[i];
+    double data  =  ray[i];
     //printf("data = %f\t", data);
     scan_msg.ranges.push_back(data);
   }
@@ -661,7 +560,7 @@ double sum_time = 0;
 bool isInit = false;
 void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input)
 {
-  //std::cout << "---start--------segmentation_with_cluster_cb---------------------" << std::endl;
+  std::cout << "---start--------segmentation_with_cluster_cb---------------------" << std::endl;
   ros::Time t_base = input->header.stamp; //timestamp t_base
   // ros::Time tt = ros::Time::now();
   // std::cout << "lag time is " << (tt - input->header.stamp).toSec() <<std::endl;
@@ -685,7 +584,7 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
   pcl::PassThrough<PointT> pass;
   pass.setInputCloud (rawCloud.makeShared());
   pass.setFilterFieldName ("z");//x:right y:down z:forward
-  pass.setFilterLimits (0, 5);//(0,5)
+  pass.setFilterLimits (0, 10);//(0,5)
   pass.filter (*indicesPT);
   extract.setInputCloud (rawCloud.makeShared ());
   extract.setIndices (indicesPT);
@@ -719,10 +618,10 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
   }
   std::cout<<"size of pointcloud after pass throungh is " << cloudForPlaneSeg.size() << std::endl;
   // downsample
-  pcl::VoxelGrid<PointT> sor; //创建滤波对象
-  sor.setDownsampleAllData(false); 
+  pcl::VoxelGrid<PointT> sor;
+  sor.setDownsampleAllData(false);
   sor.setInputCloud (cloudForPlaneSeg.makeShared());
-  sor.setLeafSize (0.03f, 0.03f, 0.03f); //设置滤波时创建的体素大小为3cm立方体
+  sor.setLeafSize (0.05f, 0.05f, 0.05f);
   sor.filter (cloudForPlaneSeg);
   sor.setInputCloud (cloudOthers.makeShared());
   sor.filter (cloudOthers);
@@ -943,6 +842,6 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
   std::cout << "loops error is " << nCountError_Test << std::endl;
   std::cout << "loops exceed time1 limit is " << nCountExceedTime1_Test << std::endl;
   std::cout << "loops exceed time2 limit is " << nCountExceedTime2_Test << std::endl;
-  //std::cout << "---end------------segmentation_with_cluster_cb-------------------" << std::endl;
+  std::cout << "---end------------segmentation_with_cluster_cb-------------------" << std::endl;
   t_old = t0;
 }
