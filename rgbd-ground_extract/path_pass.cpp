@@ -55,8 +55,8 @@
 
 typedef pcl::PointXYZ PointT;
 
-const int ULTRASOUND_NUM = 120;
-const float	HORIZONTAL_VIEW_DEGREE = 120.0;
+const float	HORIZONTAL_VIEW_DEGREE = 60;//120.0;
+const int ULTRASOUND_NUM = HORIZONTAL_VIEW_DEGREE*4;//120;
 const float	HALF_HORIZONTAL_VIEW_DEGREE = HORIZONTAL_VIEW_DEGREE * 0.5;
 const float ANGLE_INCREMENT = HORIZONTAL_VIEW_DEGREE / ULTRASOUND_NUM;
 float HEIGNT_THRESHOLD = 0.10;
@@ -75,6 +75,7 @@ ros::Publisher centroid_pub;
 ros::Publisher path_pub;
 ros::Publisher region_pub;
 ros::Publisher boundary_pub;
+ros::Publisher boundary2laser_pub;
 
 std::ofstream outfile;
 double ray[ULTRASOUND_NUM+1];
@@ -95,6 +96,7 @@ void ground_extract(const sensor_msgs::PointCloud2ConstPtr& input);
 void centroid_get(const sensor_msgs::PointCloud2ConstPtr& input);
 void path_extract(const sensor_msgs::PointCloud2ConstPtr& input);
 void get_region(const sensor_msgs::PointCloud2ConstPtr& input);
+//void boundary_get(const sensor_msgs::PointCloud2ConstPtr& input);
 
 int max_it = 200;
 int main (int argc, char** argv)
@@ -121,7 +123,7 @@ int main (int argc, char** argv)
   scan_msg.time_increment = scan_msg.scan_time / (double)(ULTRASOUND_NUM-1);
   scan_msg.range_min = SAFE_DISTANCE;
   scan_msg.range_max = MAX_DISTANCE;
-  scan_msg.header.frame_id = "/local_ground_frame";
+  scan_msg.header.frame_id = "local_ground_frame";
   std::cout << "scan_msg init done.." << std::endl;
 
   outfile.open("ground_extract_log.dat");
@@ -139,6 +141,7 @@ int main (int argc, char** argv)
   path_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_path", 10);//path
   region_pub = nh.advertise<sensor_msgs::PointCloud2>("/region", 10);//region
   boundary_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_boundary", 10);//boundary
+  boundary2laser_pub = nh.advertise<sensor_msgs::LaserScan>("/boundary_to_laser", 10);
   std::cout << "topics advertise done.." << std::endl;
 
   // Create a ROS subscriber for the input point cloud
@@ -149,6 +152,7 @@ int main (int argc, char** argv)
   ros::Subscriber centroidSub = nh.subscribe("/pointcloud_ground", 1, centroid_get);
   ros::Subscriber pathSub = nh.subscribe("/pointcloud_ground", 1, path_extract);
   ros::Subscriber regionSub = nh.subscribe("/pointcloud_ground", 1, get_region);
+  //ros::Subscriber boundarySub = nh.subscribe("/pointcloud_ground", 1, boundary_get);
   std::cout << "topics subscribe done.." << std::endl;
 
   ros::spin();
@@ -264,6 +268,69 @@ void path_extract(const sensor_msgs::PointCloud2ConstPtr& input)
 
 }
 
+/*
+void boundary_get(const sensor_msgs::PointCloud2ConstPtr& input)
+{//get outline of ground
+  std::cout << "---start outline extract------------" << std::endl;
+  pcl::PointCloud<PointT> cloudGround;
+  pcl::fromROSMsg (*input, cloudGround);
+  pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
+  cloud = cloudGround.makeShared();
+  pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+  pcl::PointCloud<pcl::Boundary> boundaries;
+  pcl::BoundaryEstimation<pcl::PointXYZ,pcl::Normal,pcl::Boundary> est;
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
+
+  pcl::NormalEstimation<pcl::PointXYZ,pcl::Normal> normEst;//其中pcl::PointXYZ表示输入类型数据，pcl::Normal表示输出类型,且pcl::Normal前三项是法向，最后一项是曲率
+  normEst.setInputCloud(cloud);
+  normEst.setSearchMethod(tree);
+  // normEst.setRadiusSearch(2);  //法向估计的半径
+  normEst.setKSearch(9);  //法向估计的点数
+  normEst.compute(*normals);
+  cout<<"normal size is "<< normals->size()<<endl;
+  
+  //normal_est.setViewPoint(0,0,0); //这个应该会使法向一致
+  est.setInputCloud(cloud);
+  est.setInputNormals(normals);
+  //  est.setAngleThreshold(90);
+  //   est.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
+  est.setSearchMethod (tree);
+  est.setKSearch(50);  //一般这里的数值越高，最终边界识别的精度越好
+  //  est.setRadiusSearch(everagedistance);  //搜索半径
+  est.compute (boundaries);
+
+  //  pcl::PointCloud<pcl::PointXYZ> boundPoints;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints (new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZ> noBoundPoints;
+  int countBoundaries = 0;
+  for (int i=0; i<cloud->size(); i++){
+    uint8_t x = (boundaries.points[i].boundary_point);
+    int a = static_cast<int>(x); //该函数的功能是强制类型转换
+    if ( a == 1)
+    {
+      if (cloud->points[i].z>1.5)
+      {//把最下面的边去掉
+        (*boundPoints).push_back(cloud->points[i]);
+        countBoundaries++;
+      }
+      // std::cout<< "boundPoints: " << boundPoints->points[i].x << " " 
+      //                             << boundPoints->points[i].y << " "
+      //                             << boundPoints->points[i].z << std::endl;
+    }
+    else
+      noBoundPoints.push_back(cloud->points[i]);
+  }
+  std::cout<<"boudary size is：" << countBoundaries <<std::endl;
+  pcl::io::savePCDFileASCII("/home/ssssubt/code/boudary.pcd", *boundPoints);
+  //pcl::io::savePCDFileASCII("/home/ssssubt/code/NoBoundpoints.pcd",noBoundPoints);
+  sensor_msgs::PointCloud2 cloud2ROS_boundary;
+  pcl::toROSMsg(*boundPoints, cloud2ROS_boundary);
+  boundary_pub.publish(cloud2ROS_boundary);
+  //pcl::PointCloud<PointT> checkCloud;
+  //pcl::fromROSMsg (cloud2ROS_boundary, checkCloud);
+  //std::cout << "check points: " << checkCloud.size() << std::endl;
+  std::cout << "---end outline extract------------" << std::endl;
+}*/
 
 void centroid_get(const sensor_msgs::PointCloud2ConstPtr& input)
 {
@@ -307,66 +374,6 @@ void centroid_get(const sensor_msgs::PointCloud2ConstPtr& input)
   centroid_pub.publish(cloud2ROS);
   //std::cout << "---end centroid------------" << std::endl;  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
   
-
-
-  //get outline of ground
-  std::cout << "---start outline extract------------" << std::endl;
-  pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
-  cloud = cloudGround.makeShared();
-  pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
-  pcl::PointCloud<pcl::Boundary> boundaries;
-  pcl::BoundaryEstimation<pcl::PointXYZ,pcl::Normal,pcl::Boundary> est;
-  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
-
-  pcl::NormalEstimation<pcl::PointXYZ,pcl::Normal> normEst;//其中pcl::PointXYZ表示输入类型数据，pcl::Normal表示输出类型,且pcl::Normal前三项是法向，最后一项是曲率
-  normEst.setInputCloud(cloud);
-  normEst.setSearchMethod(tree);
-  // normEst.setRadiusSearch(2);  //法向估计的半径
-  normEst.setKSearch(9);  //法向估计的点数
-  normEst.compute(*normals);
-  cout<<"normal size is "<< normals->size()<<endl;
-  
-  //normal_est.setViewPoint(0,0,0); //这个应该会使法向一致
-  est.setInputCloud(cloud);
-  est.setInputNormals(normals);
-  //  est.setAngleThreshold(90);
-  //   est.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
-  est.setSearchMethod (tree);
-  est.setKSearch(20);  //一般这里的数值越高，最终边界识别的精度越好
-  //  est.setRadiusSearch(everagedistance);  //搜索半径
-  est.compute (boundaries);
-
-  //  pcl::PointCloud<pcl::PointXYZ> boundPoints;
-  pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints (new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::PointCloud<pcl::PointXYZ> noBoundPoints;
-  int countBoundaries = 0;
-  for (int i=0; i<cloud->size(); i++){
-    uint8_t x = (boundaries.points[i].boundary_point);
-    int a = static_cast<int>(x); //该函数的功能是强制类型转换
-    if ( a == 1)
-    {
-      if (cloud->points[i]>)
-      {
-        (*boundPoints).push_back(cloud->points[i]);
-        countBoundaries++;
-      }
-      // std::cout<< "boundPoints: " << boundPoints->points[i].x << " " 
-      //                             << boundPoints->points[i].y << " "
-      //                             << boundPoints->points[i].z << std::endl;
-    }
-    else
-      noBoundPoints.push_back(cloud->points[i]);
-  }
-  std::cout<<"boudary size is：" << countBoundaries <<std::endl;
-  pcl::io::savePCDFileASCII("/home/ssssubt/code/boudary.pcd", *boundPoints);
-  //pcl::io::savePCDFileASCII("/home/ssssubt/code/NoBoundpoints.pcd",noBoundPoints);
-  sensor_msgs::PointCloud2 cloud2ROS_boundary;
-  pcl::toROSMsg(*boundPoints, cloud2ROS_boundary);
-  ground_pub.publish(cloud2ROS_boundary);
-  //pcl::PointCloud<PointT> checkCloud;
-  //pcl::fromROSMsg (cloud2ROS_boundary, checkCloud);
-  //std::cout << "check points: " << checkCloud.size() << std::endl;
-  std::cout << "---end outline extract------------" << std::endl;
 }
 
 void ground_extract(const sensor_msgs::PointCloud2ConstPtr& input)
@@ -395,6 +402,145 @@ void ground_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   //std::cout << "---end ground extract------------" << std::endl;
 
 
+  //get outline of ground
+  std::cout << "---start outline extract------------" << std::endl;
+  pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
+  cloud = cloudGround.makeShared();
+  pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
+  pcl::PointCloud<pcl::Boundary> boundaries;
+  pcl::BoundaryEstimation<pcl::PointXYZ,pcl::Normal,pcl::Boundary> est;
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
+
+  pcl::NormalEstimation<pcl::PointXYZ,pcl::Normal> normEst;//其中pcl::PointXYZ表示输入类型数据，pcl::Normal表示输出类型,且pcl::Normal前三项是法向，最后一项是曲率
+  normEst.setInputCloud(cloud);
+  normEst.setSearchMethod(tree);
+  // normEst.setRadiusSearch(2);  //法向估计的半径
+  normEst.setKSearch(9);  //法向估计的点数
+  normEst.compute(*normals);
+  cout<<"normal size is "<< normals->size()<<endl;
+  
+  //normal_est.setViewPoint(0,0,0); //这个应该会使法向一致
+  est.setInputCloud(cloud);
+  est.setInputNormals(normals);
+  //  est.setAngleThreshold(90);
+  //   est.setSearchMethod (pcl::search::KdTree<pcl::PointXYZ>::Ptr (new pcl::search::KdTree<pcl::PointXYZ>));
+  est.setSearchMethod (tree);
+  est.setKSearch(50);  //一般这里的数值越高，最终边界识别的精度越好
+  //  est.setRadiusSearch(everagedistance);  //搜索半径
+  est.compute (boundaries);
+
+  //  pcl::PointCloud<pcl::PointXYZ> boundPoints;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints (new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZ> noBoundPoints;
+  //boundPoints->header = input->header;
+  boundPoints->header.frame_id = "/camera_depth_optical_frame";
+  int countBoundaries = 0;
+  for (int i=0; i<cloud->size(); i++){
+    uint8_t x = (boundaries.points[i].boundary_point);
+    int a = static_cast<int>(x); //该函数的功能是强制类型转换
+    if ( a == 1)
+    {
+      if (cloud->points[i].z>1)
+      {//把最近的边去掉
+        (*boundPoints).push_back(cloud->points[i]);
+        countBoundaries++;
+      }
+      // std::cout<< "boundPoints: " << boundPoints->points[i].x << " " 
+      //                             << boundPoints->points[i].y << " "
+      //                             << boundPoints->points[i].z << std::endl;
+    }
+    else
+      noBoundPoints.push_back(cloud->points[i]);
+  }
+  std::cout<<"boudary size is：" << countBoundaries <<std::endl;
+  //pcl::io::savePCDFileASCII("/home/ssssubt/code/boudary.pcd", *boundPoints);
+  //pcl::io::savePCDFileASCII("/home/ssssubt/code/NoBoundpoints.pcd",noBoundPoints);
+  
+  sensor_msgs::PointCloud2 cloud2ROS_boundary;
+  pcl::toROSMsg(*boundPoints, cloud2ROS_boundary);
+  boundary_pub.publish(cloud2ROS_boundary);
+  //pcl::PointCloud<PointT> checkCloud;
+  //pcl::fromROSMsg (cloud2ROS_boundary, checkCloud);
+  //std::cout << "check points: " << checkCloud.size() << std::endl;
+  std::cout << "---end outline extract------------" << std::endl;
+
+
+
+  //boundary to laserscan
+  std::cout << "---start boundary to laser-------" << std::endl;
+  int pcindex[ULTRASOUND_NUM+1];
+  for(int i=0;i<=ULTRASOUND_NUM;i++)
+  {//initialize
+    ray[i] = 0;//std::numeric_limits<float>::infinity();
+    pcindex[i] = -1;
+  }
+  pcl::PointCloud<PointT> pcLaserScan;
+  for(size_t i = 0 ; i < boundPoints->points.size() ; i++)
+  {//every point of one frame
+    PointT p = boundPoints->points[i];
+    std::cout << "point is: " << "(" << p.x << "," << p.y << "," << p.z << ")" << std::endl;
+    // std::cout << " z " << p.z << std::endl;
+    float distance = sqrt(p.x*p.x + p.z*p.z);//x:right y:down z:forward
+    std::cout << "distance is " << distance << std::endl;
+    /*
+    float heightThreshold = HEIGNT_THRESHOLD; //default is 0.1// adjust heightThreshold by the distance from origin point, because noise varys with distance
+    if(distance > 3.0)
+      heightThreshold = (distance * 0.2 + 0.4) * HEIGNT_THRESHOLD;
+    // std::cout << "z is " << p.z << std::endl;
+    // std::cout << "heightThreshold is " << heightThreshold << std::endl;
+    if(p.z < heightThreshold || p.z > 2.0)
+      continue;
+    */
+    double angle = atan(p.x/p.z) * RAD_TO_DEGREE;//x:right y:down z:forward
+    std::cout << "angle is " << angle << std::endl;
+    if(angle > HALF_HORIZONTAL_VIEW_DEGREE || angle < -HALF_HORIZONTAL_VIEW_DEGREE)//((angle>0 && angle<(90-HALF_HORIZONTAL_VIEW_DEGREE)) || (angle<0 && angle>(-HALF_HORIZONTAL_VIEW_DEGREE)))
+      continue;
+
+    if(fabs(distance)< SAFE_DISTANCE || distance > MAX_DISTANCE)
+      distance = std::numeric_limits<float>::infinity();
+
+    int index = round( (angle + HALF_HORIZONTAL_VIEW_DEGREE) / ANGLE_INCREMENT );
+    std::cout << "index: " << index << std::endl;
+    if(distance > ray[index])
+    {
+      ray[index] = distance;
+      pcindex[index] = i;
+    }
+    //pcObastacle.push_back(cloud->points.at(i));
+
+  }
+  for(int i =0 ; i <= ULTRASOUND_NUM ; i++)
+  {//every frame of Laser
+    int index = pcindex[i];
+    if(index != -1)
+    {
+      PointT p = boundPoints->points[index];
+      pcLaserScan.push_back(PointT(p.x , p.y , 0));
+    }
+  }
+  //pcl::transformPointCloud(pcLaserScan , pcLaserScan , mTransform);
+
+  // sensor_msgs::PointCloud2 could2ROS;
+  // pcLaserScan.header = boundPoints->header;
+  // pcl::toROSMsg(pcLaserScan , could2ROS);
+  // pc_Scan_pub.publish(could2ROS);
+
+  // pcObastacle.header = boundPoints->header;
+  // pcl::toROSMsg(pcObastacle , could2ROS);
+  // obstacle_pub.publish (could2ROS);
+
+  //  mutex.lock();
+  scan_msg.ranges.clear();
+  scan_msg.header.stamp = ros::Time::now();
+  for(int i=0;i<=ULTRASOUND_NUM;i++)
+  {
+    double data = ray[i];
+    //printf("data = %f\t", data);
+    scan_msg.ranges.push_back(data);
+  }
+  //  mutex.unlock();
+  boundary2laser_pub.publish(scan_msg);
+  std::cout << "---end boundary to laser-------" << std::endl;
 }
 
 bool isInfValue(double value)
@@ -513,13 +659,13 @@ void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoeffic
   transform.setRotation(tf::Quaternion(q_eigen.x() , q_eigen.y() , q_eigen.z() , q_eigen.w()));
 
   static tf::TransformBroadcaster br;
-  br.sendTransform(tf::StampedTransform(transform , time , "/camera_depth_optical_frame" , "/local_ground_frame"));
+  br.sendTransform(tf::StampedTransform(transform , time , "camera_depth_optical_frame" , "local_ground_frame"));
 
   // step4: transform pointcloud to local ground frame
   pcl::PointCloud<PointT>::Ptr cloudInGround(new pcl::PointCloud<PointT>);
   pcl::transformPointCloud(*cloud , *cloudInGround , mTransform_inv);
   cloudInGround->header = cloud->header;
-  cloudInGround->header.frame_id = "/local_ground_frame";
+  cloudInGround->header.frame_id = "local_ground_frame";
   std::cout << "transform cloud size is " << cloudInGround->size() << std::endl;
 
   //  sensor_msgs::PointCloud2 could2ROS;
@@ -541,6 +687,7 @@ void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoeffic
     // std::cout << " z " << p.z << std::endl;
     float distance = sqrt(p.x*p.x + p.y*p.y);
     // std::cout << "distance is " << distance << std::endl;
+    /*
     float heightThreshold = HEIGNT_THRESHOLD; //default is 0.1// adjust heightThreshold by the distance from origin point, because noise varys with distance
     if(distance > 3.0)
       heightThreshold = (distance * 0.2 + 0.4) * HEIGNT_THRESHOLD;
@@ -548,9 +695,9 @@ void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoeffic
     // std::cout << "heightThreshold is " << heightThreshold << std::endl;
     if(p.z < heightThreshold || p.z > 2.0)
       continue;
-
+    */
     double angle = atan(p.y/p.x) * RAD_TO_DEGREE;
-    std::cout << "angle is " << angle << std::endl;
+    //std::cout << "angle is " << angle << std::endl;
     if(angle > HALF_HORIZONTAL_VIEW_DEGREE || angle < -HALF_HORIZONTAL_VIEW_DEGREE)
       continue;
 
@@ -558,7 +705,7 @@ void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoeffic
       distance = std::numeric_limits<float>::infinity();
 
     int index = round( (angle + HALF_HORIZONTAL_VIEW_DEGREE) / ANGLE_INCREMENT );
-    if(distance < ray[index])
+    if(distance > ray[index])
     {
       ray[index] = distance;
       pcindex[index] = i;
@@ -625,7 +772,7 @@ void region_growing_segmentation(pcl::PointCloud<PointT>::Ptr cloud , std::vecto
 
   // std::cout << "Number of normals is equal to " << normals->size() << std::endl;
   // std::cout << "Number of clusters is equal to " << clusters->size () << std::endl;
-  pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud ();
+  pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud();
 
   if(clusters->empty())
     return;
@@ -722,7 +869,7 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
   pcl::VoxelGrid<PointT> sor; //创建滤波对象
   sor.setDownsampleAllData(false); 
   sor.setInputCloud (cloudForPlaneSeg.makeShared());
-  sor.setLeafSize (0.03f, 0.03f, 0.03f); //设置滤波时创建的体素大小为3cm立方体
+  sor.setLeafSize (0.02f, 0.02f, 0.02f); //设置滤波时创建的体素大小为2cm立方体
   sor.filter (cloudForPlaneSeg);
   sor.setInputCloud (cloudOthers.makeShared());
   sor.filter (cloudOthers);
