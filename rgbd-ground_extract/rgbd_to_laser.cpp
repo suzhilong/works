@@ -85,7 +85,7 @@ Eigen::Vector3f groundAxis(0,-1,0);
 
 bool isInfValue(double value);
 void fillFalseInf(double ray[]);
-void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoefficients::ConstPtr coef , ros::Time time);
+void project_to_localGroundFrame(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoefficients::ConstPtr coef , ros::Time time);
 void ground_in_imu_cb (const geometry_msgs::Vector3StampedConstPtr& ground);
 void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input);
 void CB_publishCycle(const ros::TimerEvent& e);
@@ -437,14 +437,14 @@ void fillFalseInf(double ray[])
   }
 }
 
-void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoefficients::ConstPtr coef , ros::Time time)
+void project_to_localGroundFrame(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoefficients::ConstPtr coef , ros::Time time)
 {
 //  static ros::Time t0 = ros::Time::now();
 //  ros::Time t1 = ros::Time::now();
 //  std::cout << "project periods is "<< (t1 - t0).toSec() << std::endl;
 //  t0 = t1;
 //  std::cout << "project cloud size is " << cloud->size() << std::endl;
-  std::cout << "---start--------project_to_laserscan----------" << std::endl;
+  // std::cout << "---start--------project_to_localGroundFrame----------" << std::endl;
   // step1: choose two points in reference frame, and form axis x of local ground frame with the two points
   pcl::PointCloud<PointT> c , pcObastacle;
   PointT point;
@@ -504,7 +504,7 @@ void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoeffic
   pcl::transformPointCloud(*cloud , *cloudInGround , mTransform_inv);
   cloudInGround->header = cloud->header;
   cloudInGround->header.frame_id = "local_ground_frame";
-  std::cout << "transform cloud size is " << cloudInGround->size() << std::endl;
+  // std::cout << "transform cloud size is " << cloudInGround->size() << std::endl;
 
   //  sensor_msgs::PointCloud2 could2ROS;
   //  pcl::toROSMsg(*cloudInGround , could2ROS);
@@ -584,7 +584,7 @@ void project_to_laserscan(pcl::PointCloud<PointT>::Ptr cloud , pcl::ModelCoeffic
   //  mutex.unlock();
   scan_pub.publish(scan_msg);
   */
-  std::cout << "---end--------project_to_laserscan----------" << std::endl;
+  // std::cout << "---end--------project_to_localGroundFrame----------" << std::endl;
 }
 
 void region_growing_segmentation(pcl::PointCloud<PointT>::Ptr cloud , std::vector <pcl::PointIndices>* clusters)
@@ -827,8 +827,8 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
     {//MAX_COUNT_NO_GROUND=20, hasFirstGroundAxis init is false,
       // ROS_INFO("WARNING %d : detect no appropriate plane , use last ground plane!" , nCountNoGround);
       // ROS_INFO("ground plane is (%f %f %f %f)" , coefficientsOfPlane.values[0],coefficientsOfPlane.values[1],coefficientsOfPlane.values[2],coefficientsOfPlane.values[3]);
-      // project_to_laserscan(rawCloud.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
-      project_to_laserscan(cloudForPlaneSeg.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
+      // project_to_localGroundFrame(rawCloud.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
+      project_to_localGroundFrame(cloudForPlaneSeg.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
       // test_pub.publish(*input);//pub original pointclouds
       if(isInit)//no initial and no plane
         nCountWarning_Test++;//warning test num
@@ -848,8 +848,8 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
     hasFirstGroundAxis = true;
     nCountNoGround = 0;
    // ROS_INFO("ground plane is (%f %f %f %f)" , coefficientsOfPlane.values[0],coefficientsOfPlane.values[1],coefficientsOfPlane.values[2],coefficientsOfPlane.values[3]);
-    // project_to_laserscan(rawCloud.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
-    project_to_laserscan(cloudForPlaneSeg.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
+    // project_to_localGroundFrame(rawCloud.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
+    project_to_localGroundFrame(cloudForPlaneSeg.makeShared() ,boost::make_shared<pcl::ModelCoefficients>(coefficientsOfPlane) , t_base);
     // test_pub.publish(*input);//pub original pointclouds
     if(isInit)
       nCountCorrect_Test++;//correct test num
