@@ -156,14 +156,24 @@ add_definitions(${EIGEN3_DEFINITIONS})
 # )
 
 
-add_executable(plane_seg_local src/plane_seg_local.cpp)
-target_link_libraries(plane_seg_local ${catkin_LIBRARIES})
+# add_executable(plane_seg_local src/plane_seg_local.cpp)
+# target_link_libraries(plane_seg_local ${catkin_LIBRARIES})
 
-add_executable(imu_pose_estimator src/ahrs.cpp)
-target_link_libraries(imu_pose_estimator ${catkin_LIBRARIES})
+# add_executable(imu_pose_estimator src/ahrs.cpp)
+# target_link_libraries(imu_pose_estimator ${catkin_LIBRARIES})
 
-add_executable(plane_extract src/plane_extract.cpp)
-target_link_libraries(plane_extract ${catkin_LIBRARIES})
+# add_executable(plane_extract src/plane_extract.cpp)
+# target_link_libraries(plane_extract ${catkin_LIBRARIES})
+
+# add_executable(path_extract src/path_pass.cpp)
+# target_link_libraries(path_extract ${catkin_LIBRARIES})
+
+add_executable(rgbd_to_laser src/rgbd_to_laser.cpp)
+target_link_libraries(rgbd_to_laser ${catkin_LIBRARIES})
+
+add_executable(rgbd_to_laser_3d src/rgbd_to_laser_3d.cpp)
+target_link_libraries(rgbd_to_laser_3d ${catkin_LIBRARIES})
+
 
 #############
 ## Install ##
@@ -181,8 +191,8 @@ target_link_libraries(plane_extract ${catkin_LIBRARIES})
 
 # Mark executables and/or libraries for installation
  install(TARGETS
-   plane_seg_local
-   imu_pose_estimator
+   # plane_seg_local
+   # imu_pose_estimator
    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
