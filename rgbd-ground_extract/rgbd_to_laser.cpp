@@ -1,11 +1,5 @@
 /**************************************************************
- * Author: Brendon
- * Description: project pointcloud into ground plane, and build it as a laserscan in local ground frame
- * subscribe:
- *          /ground_in_imuframe             // pose of ground in imu frame (/camera_accel_optical_frame which is same as /camera_depth_optical_frame)
- *          /camera/depth/color/points      // pointcloud published by realsense d435i
- * publish:
- *          //laserscan_3d                  // data of laserscan in local ground frame
+
  * ************************************************************/
 #include <ros/ros.h>
 // PCL specific includes
@@ -65,11 +59,11 @@ const float SAFE_DISTANCE = 0.1;
 const float MAX_DISTANCE = 5;//10;
 
 ros::Publisher colorPlane_pub;
-ros::Publisher test_pub;
+// ros::Publisher test_pub;
 ros::Publisher cloudForPlane_pub;
-ros::Publisher obstacle_pub;
-ros::Publisher pc_Scan_pub;
-ros::Publisher scan_pub;
+// ros::Publisher obstacle_pub;
+// ros::Publisher pc_Scan_pub;
+// ros::Publisher scan_pub;
 ros::Publisher ground_pub;
 ros::Publisher boundary_pub;
 ros::Publisher boundary2laser_pub;
@@ -124,13 +118,13 @@ int main (int argc, char** argv)
   std::cout << "open file done.." << std::endl;
 
   // Create a ROS publisher for the output point cloud
-  test_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud", 10);
-  obstacle_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_obastacle", 10);
-  pc_Scan_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_laserscan", 10);
-  scan_pub = nh.advertise<sensor_msgs::LaserScan>("/laserscan_3d", 10);
+  // test_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud", 10);
+  // obstacle_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_obastacle", 10);
+  // pc_Scan_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_laserscan", 10);
+  // scan_pub = nh.advertise<sensor_msgs::LaserScan>("/laserscan_3d", 10);
   colorPlane_pub = nh.advertise<sensor_msgs::PointCloud2>("/colored_plane", 10);
   cloudForPlane_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud_for_plane", 10);
-  // ground_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_ground", 10);//ground
+  ground_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_ground", 10);//ground
   boundary_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_boundary", 10);//boundary
   boundary2laser_pub = nh.advertise<sensor_msgs::LaserScan>("/boundary_to_laser", 10);
   std::cout << "topics advertise done.." << std::endl;
@@ -269,8 +263,8 @@ void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   //  pcl::PointCloud<pcl::PointXYZ> boundPoints;
   pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints (new pcl::PointCloud<pcl::PointXYZ>);
   pcl::PointCloud<pcl::PointXYZ> noBoundPoints;
-  //boundPoints->header = input->header;
-  boundPoints->header.frame_id = "/camera_depth_optical_frame";
+  boundPoints->header.frame_id = input->header.frame_id;
+  // boundPoints->header.frame_id = "/camera_depth_optical_frame";
   int countBoundaries = 0;
   for (int i=0; i<cloud->size(); i++){
     uint8_t x = (boundaries.points[i].boundary_point);
@@ -300,7 +294,6 @@ void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   //pcl::fromROSMsg (cloud2ROS_boundary, checkCloud);
   //std::cout << "check points: " << checkCloud.size() << std::endl;
   std::cout << "---------end outline extract------------" << std::endl;
-
 
 
   //boundary to laserscan
