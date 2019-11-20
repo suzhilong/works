@@ -240,7 +240,7 @@ void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input)
 
 
   //get outline of ground
-  std::cout << "---start outline extract------------" << std::endl;
+  std::cout << "--------start outline extract------------" << std::endl;
   pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
   cloud = cloudGround.makeShared();
   pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
@@ -299,12 +299,12 @@ void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   //pcl::PointCloud<PointT> checkCloud;
   //pcl::fromROSMsg (cloud2ROS_boundary, checkCloud);
   //std::cout << "check points: " << checkCloud.size() << std::endl;
-  std::cout << "---end outline extract------------" << std::endl;
+  std::cout << "---------end outline extract------------" << std::endl;
 
 
 
   //boundary to laserscan
-  std::cout << "---start boundary to laser-------" << std::endl;
+  std::cout << "-------start boundary to laser-------" << std::endl;
   int pcindex[ULTRASOUND_NUM+1];
   for(int i=0;i<=ULTRASOUND_NUM;i++)
   {//initialize
@@ -378,7 +378,7 @@ void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   }
   //  mutex.unlock();
   boundary2laser_pub.publish(scan_msg);
-  std::cout << "---end boundary to laser-------" << std::endl;
+  std::cout << "-------end boundary to laser-------" << std::endl;
 }
 
 bool isInfValue(double value)
@@ -672,7 +672,7 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
   pcl::PassThrough<PointT> pass;
   pass.setInputCloud (rawCloud.makeShared());
   pass.setFilterFieldName ("z");//x:right y:down z:forward
-  pass.setFilterLimits (0, 4);//(0,5)
+  pass.setFilterLimits (0, 3);//(0,5)
   pass.filter (*indicesPT);
   extract.setInputCloud (rawCloud.makeShared ());
   extract.setIndices (indicesPT);
