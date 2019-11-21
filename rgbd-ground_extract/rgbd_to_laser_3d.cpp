@@ -49,7 +49,7 @@
 
 typedef pcl::PointXYZ PointT;
 
-const float HORIZONTAL_VIEW_DEGREE = 58;//120.0; //水平视角
+const float HORIZONTAL_VIEW_DEGREE = 56;//120.0; //水平视角
 const int ULTRASOUND_NUM = HORIZONTAL_VIEW_DEGREE*1;//120; // * frame numbers //一共多少帧
 const float HALF_HORIZONTAL_VIEW_DEGREE = HORIZONTAL_VIEW_DEGREE * 0.5;
 const float ANGLE_INCREMENT = HORIZONTAL_VIEW_DEGREE / ULTRASOUND_NUM;
@@ -66,8 +66,11 @@ ros::Publisher cloudForPlane_pub;
 // ros::Publisher scan_pub;
 ros::Publisher ground_pub;
 ros::Publisher space_pub;
-ros::Publisher boundary_pub;
-ros::Publisher boundary2laser_pub;
+ros::Publisher boundaryG_pub;
+ros::Publisher boundaryS_pub;
+ros::Publisher laserAll_pub;
+ros::Publisher allPoints_pub;
+
 
 std::ofstream outfile;
 double ray[ULTRASOUND_NUM+1];
@@ -86,8 +89,8 @@ void segmentation_with_cluster_cb (const sensor_msgs::PointCloud2ConstPtr& input
 void CB_publishCycle(const ros::TimerEvent& e);
 void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input);
 //void boundary_get(const sensor_msgs::PointCloud2ConstPtr& input);
-pcl::PointCloud<pcl::PointXYZ>::Ptr get_ground_outline(pcl::PointCloud<PointT>, std::string);
-void get_ground_boundary(pcl::PointCloud<pcl::PointXYZ>::Ptr);
+pcl::PointCloud<pcl::PointXYZ>::Ptr get_cloud_boundary(pcl::PointCloud<PointT>, std::string);
+void cloud_boundary_to_laser(pcl::PointCloud<pcl::PointXYZ>::Ptr);
 
 int max_it = 200;
 int main (int argc, char** argv)
@@ -129,8 +132,12 @@ int main (int argc, char** argv)
   cloudForPlane_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud_for_plane", 10);
   ground_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_ground", 10);//ground
   space_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_space", 10);//space
-  boundary_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_boundary", 10);//boundary
-  boundary2laser_pub = nh.advertise<sensor_msgs::LaserScan>("/laser_boundary", 10);//laser
+  boundaryG_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_boundaryG", 10);//ground boundary
+  boundaryS_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_boundaryS", 10);//space boundary
+  allPoints_pub = nh.advertise<sensor_msgs::PointCloud2>("/pointcloud_boundaryAll", 10);//all boundary
+  laserAll_pub = nh.advertise<sensor_msgs::LaserScan>("/laser_boundaryAll", 10);//laser all
+
+  
   std::cout << "topics advertise done.." << std::endl;
 
   //ros::Rate loop_rate(10);
@@ -154,7 +161,7 @@ void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   pcl::fromROSMsg (*input, cloudForPlaneSeg);
   std::cout << "input points: " << cloudForPlaneSeg.size() << std::endl;
   std::string input_frame_id = input->header.frame_id;
-  pcl::PointCloud<PointT> cloudGround, cloudOthers;
+  pcl::PointCloud<PointT> cloudGround, cloudSpace;
   pcl::ExtractIndices<PointT> extract;
   // segment out points far from camera in camera frame
   pcl::IndicesPtr indicesPT (new std::vector <int>);
@@ -168,26 +175,50 @@ void ground_boundary_extract(const sensor_msgs::PointCloud2ConstPtr& input)
   extract.setNegative (false);
   extract.filter (cloudGround);  // extract the inliers
   extract.setNegative (true);
-  extract.filter (cloudOthers); // extract the outliers
+  extract.filter (cloudSpace); // extract the outliers
   std::cout << "after filter Ground points: " << cloudGround.size() << std::endl;
-  std::cout << "after filter Others points: " << cloudOthers.size() << std::endl;
-  sensor_msgs::PointCloud2 cloudG2ROS,cloudO2ROS;
+  std::cout << "after filter Others points: " << cloudSpace.size() << std::endl;
+  sensor_msgs::PointCloud2 cloudG2ROS, cloudS2ROS;
   pcl::toROSMsg(cloudGround , cloudG2ROS);
   ground_pub.publish(cloudG2ROS);
-  pcl::toROSMsg(cloudOthers , cloudO2ROS);
-  space_pub.publish(cloudO2ROS);
+  pcl::toROSMsg(cloudSpace , cloudS2ROS);
+  space_pub.publish(cloudS2ROS);
   //std::cout << "---end ground extract------------" << std::endl;
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints;
-  boundPoints = get_ground_outline(cloudGround, input_frame_id);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr groundBoundPoints, spaceBoundPoints, allBoundPoints;
+  //get groundBoundary
+  groundBoundPoints = get_cloud_boundary(cloudGround, input_frame_id);
+  sensor_msgs::PointCloud2 cloud2ROS_boundaryG;
+  pcl::toROSMsg(*groundBoundPoints, cloud2ROS_boundaryG);
+  boundaryG_pub.publish(cloud2ROS_boundaryG);
+  //get space boundary
+  spaceBoundPoints = get_cloud_boundary(cloudSpace, input_frame_id);
+  sensor_msgs::PointCloud2 cloud2ROS_boundaryS;
+  pcl::toROSMsg(*spaceBoundPoints, cloud2ROS_boundaryS);
+  boundaryS_pub.publish(cloud2ROS_boundaryS);
 
-  get_ground_boundary(boundPoints);
+  // cloud_boundary_to_laser(groundBoundPoints);
 
+  //get all(ground+space)boundary pointscloud
+  pcl::PointCloud<PointT> cloudAll;
+  // cloudAll = *spaceBoundPoints + *groundBoundPoints;
+  cloudAll = cloudSpace + *groundBoundPoints;
+  allBoundPoints = cloudAll.makeShared();
   
+  cloud_boundary_to_laser(allBoundPoints);
+
+  //pub ground+space boundary
+  sensor_msgs::PointCloud2 cloud2ROS_all;
+  pcl::toROSMsg(cloudAll, cloud2ROS_all);
+  allPoints_pub.publish(cloud2ROS_all);
+
+
+
+
 }
 
 
-pcl::PointCloud<pcl::PointXYZ>::Ptr get_ground_outline(pcl::PointCloud<PointT> cloudGround, std::string input_frame_id)
+pcl::PointCloud<pcl::PointXYZ>::Ptr get_cloud_boundary(pcl::PointCloud<PointT> cloudGround, std::string input_frame_id)
 {//get outline of ground
   std::cout << "--------start outline extract------------" << std::endl;
   pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
@@ -226,7 +257,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr get_ground_outline(pcl::PointCloud<PointT> c
     int a = static_cast<int>(x); //该函数的功能是强制类型转换
     if ( a == 1)
     {
-      if (cloud->points[i].z>1)
+      if (cloud->points[i].z>1)//change 1 to SAFE_DISTANCE
       {//把最近的边去掉
         (*boundPoints).push_back(cloud->points[i]);
         countBoundaries++;
@@ -242,29 +273,27 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr get_ground_outline(pcl::PointCloud<PointT> c
   //pcl::io::savePCDFileASCII("/home/ssssubt/code/boudary.pcd", *boundPoints);
   //pcl::io::savePCDFileASCII("/home/ssssubt/code/NoBoundpoints.pcd",noBoundPoints);
   
-  sensor_msgs::PointCloud2 cloud2ROS_boundary;
-  pcl::toROSMsg(*boundPoints, cloud2ROS_boundary);
-  boundary_pub.publish(cloud2ROS_boundary);
+
   //pcl::PointCloud<PointT> checkCloud;
   //pcl::fromROSMsg (cloud2ROS_boundary, checkCloud);
   //std::cout << "check points: " << checkCloud.size() << std::endl;
-  return boundPoints;
   std::cout << "---------end outline extract------------" << std::endl;
+  return boundPoints;
 }
 
-void get_ground_boundary(pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints)
+void cloud_boundary_to_laser(pcl::PointCloud<pcl::PointXYZ>::Ptr inputPoints)
 {//boundary to laserscan
   std::cout << "-------start boundary to laser-------" << std::endl;
   int pcindex[ULTRASOUND_NUM+1];
   for(int i=0;i<=ULTRASOUND_NUM;i++)
   {//initialize
-    ray[i] = 0;//std::numeric_limits<float>::infinity();
+    ray[i] = std::numeric_limits<float>::infinity();//0;
     pcindex[i] = -1;
   }
   pcl::PointCloud<PointT> pcLaserScan;
-  for(size_t i = 0 ; i < boundPoints->points.size() ; i++)
+  for(size_t i = 0 ; i < inputPoints->points.size() ; i++)
   {//every point of one frame
-    PointT p = boundPoints->points[i];
+    PointT p = inputPoints->points[i];
     // std::cout << "point is: " << "(" << p.x << "," << p.y << "," << p.z << ")" << std::endl;
     // std::cout << " z " << p.z << std::endl;
     float distance = sqrt(p.x*p.x + p.z*p.z);//x:right y:down z:forward
@@ -288,7 +317,7 @@ void get_ground_boundary(pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints)
 
     int index = round( (angle + HALF_HORIZONTAL_VIEW_DEGREE) / ANGLE_INCREMENT );
     // std::cout << "index: " << index << std::endl;
-    if(distance > ray[index])
+    if(distance < ray[index])//distance > ray[index]
     {
       ray[index] = distance;
       pcindex[index] = i;
@@ -301,7 +330,7 @@ void get_ground_boundary(pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints)
     int index = pcindex[i];
     if(index != -1)
     {
-      PointT p = boundPoints->points[index];
+      PointT p = inputPoints->points[index];
       pcLaserScan.push_back(PointT(p.x , p.y , 0));
     }
   }
@@ -316,7 +345,7 @@ void get_ground_boundary(pcl::PointCloud<pcl::PointXYZ>::Ptr boundPoints)
     scan_msg.ranges.push_back(data);
   }
   //  mutex.unlock();
-  boundary2laser_pub.publish(scan_msg);
+  laserAll_pub.publish(scan_msg);
   std::cout << "-------end boundary to laser-------" << std::endl;
 }
 
